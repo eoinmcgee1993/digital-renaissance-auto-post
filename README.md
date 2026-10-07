@@ -4,7 +4,7 @@ This repository is the runtime control plane for the Content Engine V2 deploymen
 
 ## Runtime
 - Next.js on Vercel
-- Vercel Cron for scheduled orchestration
+- Vercel Cron for scheduled orchestration (Hobby plan: each job may run at most once a day)
 - PostgreSQL/Neon-compatible DATABASE_URL for persistent state
 - OpenAI-compatible reasoning layer
 - YouTube OAuth for publishing/analytics
