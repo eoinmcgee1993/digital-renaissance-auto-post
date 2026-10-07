@@ -2,7 +2,7 @@ import { sql } from "./db";
 import OpenAI from "openai";
 
 export async function runLearning(){
-  const rows=await sql<any[]>(`select video_id,views,likes,comments,average_view_percentage,average_view_duration from video_analytics where measured_at > now()-interval '14 days' order by views desc limit 50`);
+  const rows=await sql("select video_id,views,likes,comments,average_view_percentage,average_view_duration from video_analytics where measured_at > now()-interval '14 days' order by views desc limit 50");
   if(!rows.length) return {lessons:0};
   if(!process.env.OPENAI_API_KEY) throw new Error("OPENAI_API_KEY is required for learning");
   const ai=new OpenAI({apiKey:process.env.OPENAI_API_KEY});
