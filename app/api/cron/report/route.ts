@@ -1,1 +1,0 @@
-import {NextResponse} from "next/server"; import {cronAuthorized} from "@/lib/cron-auth"; export async function GET(req:Request){if(!cronAuthorized(req)) return new NextResponse("Unauthorized",{status:401}); return NextResponse.json({ok:true,status:"weekly_report_worker_stub"})}
