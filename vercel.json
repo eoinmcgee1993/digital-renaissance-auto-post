@@ -1,1 +1,1 @@
-{"crons":[{"path":"/api/cron/research","schedule":"0 6 * * *"},{"path":"/api/cron/analytics","schedule":"0 7 * * *"},{"path":"/api/cron/report","schedule":"0 8 * * 1"}]}
+{"crons":[{"path":"/api/cron/research","schedule":"0 6 * * *"},{"path":"/api/cron/generate","schedule":"0 7 * * *"},{"path":"/api/cron/qa","schedule":"0 8 * * *"},{"path":"/api/cron/analytics","schedule":"0 9 * * *"},{"path":"/api/cron/report","schedule":"0 10 * * 1"}]}
