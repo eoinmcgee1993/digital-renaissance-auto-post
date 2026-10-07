@@ -1,0 +1,1 @@
+import {NextResponse} from "next/server"; import {health} from "@/lib/engine"; export async function GET(){try{return NextResponse.json(await health())}catch(e){return NextResponse.json({status:"error",error:String(e)},{status:500})}}
