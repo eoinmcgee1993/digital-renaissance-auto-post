@@ -1,0 +1,1 @@
+export default function Home(){return <main style={{fontFamily:"system-ui",padding:40,maxWidth:900,margin:"auto"}}><h1>YouTube Content Engine</h1><p>Autonomous research, scoring, production orchestration, publishing gates and learning loop.</p><p>Runtime state is stored outside the model. Publishing remains blocked until required credentials and QA gates are present.</p></main>}
