@@ -1,51 +1,35 @@
-import { execFile } from "node:child_process";
-import { writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import { promisify } from "node:util";
+import { sql } from "./db";
 
-const run = promisify(execFile);
-const FPS = 30;
-
-export async function durationSeconds(file: string): Promise<number> {
-  const { stdout } = await run("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", file]);
-  return Number(stdout.trim());
+export async function runRender(limit=3) {
+  const endpoint=process.env.RENDER_API_URL, key=process.env.RENDER_API_KEY;
+  if(!endpoint || !key) throw new Error("RENDER_API_URL and RENDER_API_KEY are required for rendering");
+  const jobs=await sql<{id:string;title:string;payload:any}>(`select id,title,payload from content_jobs where stage='render' and status='queued' order by created_at asc limit $1`,[limit]);
+  const results=[];
+  for(const job of jobs){
+    const pkg=job.payload?.package;
+    const voice=await renderVoice(pkg?.script||"");
+    const r=await fetch(endpoint,{method:"POST",headers:{"content-type":"application/json",authorization:`Bearer ${key}`},body:JSON.stringify({job_id:job.id,title:job.title,package:pkg,voice_url:voice})});
+    if(!r.ok){await sql("update content_jobs set status='blocked',error=$2,updated_at=now() where id=$1",[job.id,`render_request_failed:${r.status}`]);continue}
+    const rendered=await r.json();
+    if(!rendered.video_url) throw new Error("Render provider returned no video_url");
+    await sql("update content_jobs set stage='publish',status='queued',payload=payload || $2::jsonb,updated_at=now() where id=$1",[job.id,JSON.stringify({render:rendered})]);
+    results.push({id:job.id,video_url:rendered.video_url});
+  }
+  return results;
 }
 
-// One still per scene with a slow push-in, timed to that scene's narration.
-export async function renderScene(image: string, audio: string, out: string, index: number) {
-  const frames = Math.ceil((await durationSeconds(audio) + 0.4) * FPS);
-  // Upscaling before zoompan avoids the stair-step jitter it produces at output resolution;
-  // alternating the zoom anchor keeps consecutive scenes from feeling identical.
-  const x = index % 2 ? "iw-iw/zoom" : "0";
-  const filter =
-    `[0:v]scale=3840:-2,crop=3840:2160,` +
-    `zoompan=z='min(zoom+0.0004,1.12)':x='${x}':y='ih/2-(ih/zoom/2)':d=${frames}:s=1920x1080:fps=${FPS},` +
-    `format=yuv420p[v];[1:a]apad=pad_dur=0.4[a]`;
-  await run("ffmpeg", [
-    "-y", "-v", "error", "-i", image, "-i", audio,
-    "-filter_complex", filter, "-map", "[v]", "-map", "[a]",
-    "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-r", String(FPS),
-    "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2",
-    "-frames:v", String(frames), out,
-  ], { maxBuffer: 1 << 26 });
-}
-
-export async function concatScenes(scenes: string[], dir: string, out: string) {
-  const list = join(dir, "scenes.txt");
-  await writeFile(list, scenes.map((s) => `file '${s}'`).join("\n"));
-  await run("ffmpeg", ["-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", list, "-c", "copy", "-movflags", "+faststart", out]);
-}
-
-export async function toThumbnail(png: string, out: string) {
-  await run("ffmpeg", ["-y", "-v", "error", "-i", png, "-vf", "scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720", "-q:v", "3", out]);
-}
-
-// DRY_RUN fixtures, so the render path can be exercised without spending API credit.
-export async function placeholderImage(out: string, index: number) {
-  const colors = ["0x1f3a5f", "0x5f1f3a", "0x3a5f1f", "0x5f4b1f"];
-  await run("ffmpeg", ["-y", "-v", "error", "-f", "lavfi", "-i", `testsrc2=s=1536x1024,drawbox=c=${colors[index % 4]}@0.6:t=fill`, "-frames:v", "1", out]);
-}
-
-export async function placeholderAudio(out: string, seconds: number) {
-  await run("ffmpeg", ["-y", "-v", "error", "-f", "lavfi", "-i", `sine=f=220:d=${seconds}`, "-c:a", "libmp3lame", "-b:a", "128k", out]);
+async function renderVoice(script:string){
+  const key=process.env.ELEVENLABS_API_KEY;
+  if(!key) throw new Error("ELEVENLABS_API_KEY is required for voice generation");
+  const voiceId=process.env.ELEVENLABS_VOICE_ID;
+  if(!voiceId) throw new Error("ELEVENLABS_VOICE_ID is required for voice generation");
+  const r=await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,{method:"POST",headers:{"xi-api-key":key,"content-type":"application/json","accept":"audio/mpeg"},body:JSON.stringify({text:script,model_id:process.env.ELEVENLABS_MODEL_ID||"eleven_multilingual_v2"})});
+  if(!r.ok) throw new Error(`ElevenLabs failed: ${r.status}`);
+  const endpoint=process.env.ASSET_UPLOAD_URL;
+  const uploadKey=process.env.ASSET_UPLOAD_KEY;
+  if(!endpoint || !uploadKey) throw new Error("ASSET_UPLOAD_URL and ASSET_UPLOAD_KEY are required to persist generated audio");
+  const up=await fetch(endpoint,{method:"POST",headers:{"content-type":"audio/mpeg",authorization:`Bearer ${uploadKey}`},body:await r.arrayBuffer()});
+  if(!up.ok) throw new Error(`Audio asset upload failed: ${up.status}`);
+  const data=await up.json(); if(!data.url) throw new Error("Audio asset provider returned no url");
+  return data.url as string;
 }
